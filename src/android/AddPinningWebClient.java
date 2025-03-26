@@ -13,9 +13,9 @@ import com.outsystems.plugins.sslpinning.pinning.OkHttpClientWrapper;
 import com.outsystems.plugins.sslpinning.pinning.X509TrustManagerWrapper;
 
 import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -28,8 +28,12 @@ import okhttp3.Response;
 public class AddPinningWebClient {
 
     private final Logger logger = OSLogger.getInstance();
+    private static final ConnectionPool sharedPool = new ConnectionPool(5, 300, TimeUnit.SECONDS);
+    private final OkHttpClient cachedClient = getHttpClientBuilder().build();
 
-    public WebResourceResponse getSSLUrlValidation(String url) {
+    /**
+     * COMMENT from now use another one for performance no block Main Thread
+     * public WebResourceResponse getSSLUrlValidation(String url) {
         CompletableFuture<Pair<Boolean, String>> sslPinningFuture = new CompletableFuture<>();
         requestSSLPinning(url, new SSLErrorCallback() {
             @Override
@@ -45,28 +49,57 @@ public class AddPinningWebClient {
         });
 
         try {
-            if (!sslPinningFuture.get().first) {
+            Pair<Boolean, String> result = sslPinningFuture.get();
+            if (!result.first) {
                 String extension = MimeTypeMap.getFileExtensionFromUrl(url);
                 String mimeType = MimeTypesHelper.getInstance().getMimeType(extension);
                 return new WebResourceResponse(mimeType, "UTF-8", 525, "SSLPinning found some problem with the request "+ sslPinningFuture.get().second, null, null);
             }
         } catch (InterruptedException | ExecutionException e) {
             logger.logError("Failed to parse pinning ExecutionException: " + e.getMessage(), "OSSSLPinning");
-            e.printStackTrace();
             return new WebResourceResponse("text/plain", "UTF-8", 525, "SSLPinning execution error: " + e.getMessage(), null, null);
         }
+        return null;
+    }**/
+
+    public WebResourceResponse getSSLUrlValidation(String url) {
+        AtomicReference<Pair<Boolean, String>> result = new AtomicReference<>();        CountDownLatch latch = new CountDownLatch(1);
+        requestSSLPinning(url, new SSLErrorCallback() {
+            @Override
+            public void onError(String code, String message) {
+                result.set(new Pair<>(false, message));
+                latch.countDown();
+            }
+
+            @Override
+            public void onSuccess() {
+                result.set(new Pair<>(true, "success"));
+                latch.countDown();
+            }
+        });
+
+        try {
+            boolean completed = latch.await(7, TimeUnit.SECONDS);
+            Pair<Boolean, String> finalResult = result.get();
+
+            if (!completed || finalResult == null || !finalResult.first) {
+                String ext = MimeTypeMap.getFileExtensionFromUrl(url);
+                String mime = MimeTypesHelper.getInstance().getMimeType(ext);
+                String msg = (finalResult != null) ? finalResult.second : "SSL timeout or unknown error";
+                return new WebResourceResponse(mime, "UTF-8", 525, "SSLPinning error: " + msg, null, null);
+            }
+
+        } catch (InterruptedException e) {
+            logger.logError("Interrupted while waiting for SSL pinning: " + e.getMessage(), "OSSSLPinning");
+            return new WebResourceResponse("text/plain", "UTF-8", 525, "SSLPinning interrupted: " + e.getMessage(), null, null);
+        }
+
         return null;
     }
 
     private void requestSSLPinning(final String url, final SSLErrorCallback callback) {
         Request request = new Request.Builder().url(url).build();
-
-        int timeout = 10000;
-
-        OkHttpClient.Builder builder = getHttpClientBuilder().connectTimeout(timeout, TimeUnit.MILLISECONDS).readTimeout(timeout, TimeUnit.MILLISECONDS);
-        OkHttpClient client = builder.build();
-
-        Call call = client.newCall(request);
+        Call call = cachedClient.newCall(request);
 
         call.enqueue(new Callback() {
             @Override
@@ -77,7 +110,14 @@ public class AddPinningWebClient {
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) {
-                logger.logDebug("OnResponse to requestSSLPinning : " + response.message(), "OSSSLPinning");
+                logger.logDebug("OnResponse to requestSSLPinning : response: " + response, "OSSSLPinning");
+
+                try {
+                    response.close();
+                } catch (Exception e) {
+                    logger.logError("⚠️ Failed to close response: " + e.getMessage(), "OSSSLPinning");
+                }
+
                 callback.onSuccess();
             }
         });
@@ -97,10 +137,7 @@ public class AddPinningWebClient {
         }
 
         try {
-            // getInt can throw an exception if the user inserts a non-integer value. Don't let the exception bubble up and use default connection pool
-            int keepAliveConnection = 300;
-            ConnectionPool cP = new ConnectionPool(5, keepAliveConnection, TimeUnit.SECONDS);
-            clientBuilder.connectionPool(cP);
+            clientBuilder.connectionPool(sharedPool);
         } catch (Exception e) {
             logger.logError("Failed to get preference " + "sslpinning-connection-keep-alive" + ": " + e.getMessage(), "OSSSLPinning");
         }
