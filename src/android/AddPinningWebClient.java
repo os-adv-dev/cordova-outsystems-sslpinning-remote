@@ -63,7 +63,8 @@ public class AddPinningWebClient {
     }**/
 
     public WebResourceResponse getSSLUrlValidation(String url) {
-        AtomicReference<Pair<Boolean, String>> result = new AtomicReference<>();        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Pair<Boolean, String>> result = new AtomicReference<>();        
+        CountDownLatch latch = new CountDownLatch(1);
         requestSSLPinning(url, new SSLErrorCallback() {
             @Override
             public void onError(String code, String message) {
