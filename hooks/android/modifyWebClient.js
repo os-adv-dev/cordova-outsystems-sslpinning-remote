@@ -10,39 +10,36 @@ module.exports = function(context) {
         const insertAfter = /Uri uri = Uri\.parse\(url\);/;
 
         if (content.match(insertAfter)) {
-
+        
             const codeToAdd = `
         boolean isFirebaseRemoteAlreadyFetch = preferences.getBoolean("isSSLFirebaseRemoteFetch", false);
         if (isFirebaseRemoteAlreadyFetch) {
             String path = uri.getPath();
-            if (path != null && STATIC_EXTENSIONS.matcher(path).matches()) {
+            Pattern staticExtensions = Pattern.compile("(?i).*\\.(json|map|woff|woff2|ttf|otf|svg|png|jpe?g)$");
+            if (path != null && staticExtensions.matcher(path).matches()) {
                 return null;
             }
+            
             WebResourceResponse sslValidation = this.addPinningWebClient.getSSLUrlValidation(url);
             if (sslValidation != null) {
                 return sslValidation;
             }
         }`;
 
+        
             content = content.replace(insertAfter, (match) => match + codeToAdd);
 
             content = content.replace(
                 /(this\.logger = logger;)/,
                 `$1\n        this.addPinningWebClient = new AddPinningWebClient();`
             );
-
+    
             content = content.replace(
                 /(private CordovaPreferences preferences;)/,
                 `$1\n    private AddPinningWebClient addPinningWebClient;`
             );
-
-            if (!content.includes('STATIC_EXTENSIONS')) {
-                content = content.replace(
-                    /(private AddPinningWebClient addPinningWebClient;)/,
-                    `$1\n    private static final Pattern STATIC_EXTENSIONS = Pattern.compile("(?i).*\\.(json|map|woff|woff2|ttf|otf|svg|png|jpe?g)$");`
-                );
-            }
-
+    
+           
             if (!content.includes('import com.outsystems.plugins.sslpinning.AddPinningWebClient;')) {
                 content = content.replace(
                     /(import [a-zA-Z.]*;\n)+/,
@@ -50,12 +47,14 @@ module.exports = function(context) {
                 );
             }
 
+           
             fs.writeFileSync(webClientPath, content, 'utf-8');
+
             console.error(' -- ✅ -- Code updated to WebClient Java SSL Pinning Remote ');
         } else {
             console.error(' -- ❌ -- File WebClient.java not found in the project');
         }
     } else {
-        console.error(' -- ❌ -- The file WebClient.java does not exist in this project!');
+        console.error(' -- ❌ -- The file  WebClient.java is not exist in this project!');
     }
 };
