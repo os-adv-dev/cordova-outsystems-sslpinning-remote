@@ -11,21 +11,7 @@ module.exports = function(context) {
 
         if (content.match(insertAfter)) {
             
-            const codeToAdd = `
-        boolean isFirebaseRemoteAlreadyFetch = preferences.getBoolean("isSSLFirebaseRemoteFetch", false);
-        if (isFirebaseRemoteAlreadyFetch) {
-            String path = uri.getPath();
-            Pattern staticExtensions = Pattern.compile("(?i).*\\.(json|map|woff|woff2|ttf|otf|svg|png|jpe?g)$");
-            if (path != null && staticExtensions.matcher(path).matches()) {
-                return null;
-            }
-            
-            WebResourceResponse sslValidation = this.addPinningWebClient.getSSLUrlValidation(url);
-            if (sslValidation != null) {
-                return sslValidation;
-            }
-        }`;
-            const codeToAdd = `
+        const codeToAdd = `
         boolean isFirebaseRemoteAlreadyFetch = preferences.getBoolean("isSSLFirebaseRemoteFetch", false);
         if (isFirebaseRemoteAlreadyFetch) {
             String path = uri.getPath();
