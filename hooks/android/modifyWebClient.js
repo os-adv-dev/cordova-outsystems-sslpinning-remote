@@ -10,7 +10,7 @@ module.exports = function(context) {
         const insertAfter = /Uri uri = Uri\.parse\(url\);/;
 
         if (content.match(insertAfter)) {
-        
+            
             const codeToAdd = `
         boolean isFirebaseRemoteAlreadyFetch = preferences.getBoolean("isSSLFirebaseRemoteFetch", false);
         if (isFirebaseRemoteAlreadyFetch) {
@@ -20,6 +20,20 @@ module.exports = function(context) {
                 return null;
             }
             
+            WebResourceResponse sslValidation = this.addPinningWebClient.getSSLUrlValidation(url);
+            if (sslValidation != null) {
+                return sslValidation;
+            }
+        }`;
+            const codeToAdd = `
+        boolean isFirebaseRemoteAlreadyFetch = preferences.getBoolean("isSSLFirebaseRemoteFetch", false);
+        if (isFirebaseRemoteAlreadyFetch) {
+            String path = uri.getPath();
+            Pattern staticExtensions = Pattern.compile("(?i).*\\\\.(json|map|woff|woff2|ttf|otf|svg|png|jpe?g)$");
+            if (path != null && staticExtensions.matcher(path).matches()) {
+                return null;
+            }
+
             WebResourceResponse sslValidation = this.addPinningWebClient.getSSLUrlValidation(url);
             if (sslValidation != null) {
                 return sslValidation;
